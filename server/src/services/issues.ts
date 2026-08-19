@@ -9,10 +9,13 @@ import {
   assets,
   companies,
   companyMemberships,
+  costEvents,
   documents,
   goals,
   heartbeatRuns,
   executionWorkspaces,
+  feedbackVotes,
+  financeEvents,
   issueApprovals,
   issueAttachments,
   issueInboxArchives,
@@ -4583,6 +4586,22 @@ export function issueService(db: Db) {
           .select({ documentId: issueDocuments.documentId })
           .from(issueDocuments)
           .where(eq(issueDocuments.issueId, id));
+
+        // Unlink child issues first — issues.parent_id is a plain FK (no cascade),
+        // so deleting a parent issue would otherwise violate the constraint.
+        await tx.update(issues).set({ parentId: null }).where(eq(issues.parentId, id));
+
+        // Purge rows whose FK to issues has no ON DELETE action. Without this,
+        // deleting an issue that has comments/events/states 500s with an FK
+        // violation (issue_comments, cost_events, finance_events, read states,
+        // inbox archives, feedback votes, thread interactions).
+        await tx.delete(issueComments).where(eq(issueComments.issueId, id));
+        await tx.delete(costEvents).where(eq(costEvents.issueId, id));
+        await tx.delete(financeEvents).where(eq(financeEvents.issueId, id));
+        await tx.delete(issueReadStates).where(eq(issueReadStates.issueId, id));
+        await tx.delete(issueInboxArchives).where(eq(issueInboxArchives.issueId, id));
+        await tx.delete(feedbackVotes).where(eq(feedbackVotes.issueId, id));
+        await tx.delete(issueThreadInteractions).where(eq(issueThreadInteractions.issueId, id));
 
         const removedIssue = await tx
           .delete(issues)
